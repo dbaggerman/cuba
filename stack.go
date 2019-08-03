@@ -1,39 +1,36 @@
 package cuba
 
 import (
-	"sync"
 	"runtime"
+	"sync"
+	"sync/atomic"
 )
 
-const (
-	WS_CLOSED = iota
-	WS_IDLE
-	WS_BUSY
-)
+type CubaFunc func(interface{}) []interface{}
 
-type WorkStack struct {
-	mutex *sync.Mutex
-	items []string
-	cond  *sync.Cond
-	numWorkers int
-	maxWorkers int
-	closed bool
-	workerFunc func(string) []string
-	wg *sync.WaitGroup
+type CubaStack struct {
+	mutex      *sync.Mutex
+	items      []interface{}
+	cond       *sync.Cond
+	numWorkers int32
+	maxWorkers int32
+	closed     bool
+	workerFunc CubaFunc
+	wg         *sync.WaitGroup
 }
 
-func NewStack(worker func(string) []string) *WorkStack {
+func NewStack(worker CubaFunc) *CubaStack {
 	m := &sync.Mutex{}
-	return &WorkStack{
-		mutex: m,
-		cond: sync.NewCond(m),
+	return &CubaStack{
+		mutex:      m,
+		cond:       sync.NewCond(m),
 		workerFunc: worker,
-		maxWorkers: runtime.NumCPU(),
-		wg: &sync.WaitGroup{},
+		maxWorkers: int32(runtime.NumCPU()),
+		wg:         &sync.WaitGroup{},
 	}
 }
 
-func (ws *WorkStack) Close() {
+func (ws *CubaStack) Close() {
 	ws.mutex.Lock()
 	defer ws.mutex.Unlock()
 
@@ -41,26 +38,25 @@ func (ws *WorkStack) Close() {
 	ws.cond.Broadcast()
 }
 
-func (ws *WorkStack) Run() {
+func (ws *CubaStack) Run() {
 	ws.Close()
 	ws.wg.Wait()
 }
 
-func (ws *WorkStack) Push(item string) {
+func (ws *CubaStack) Push(items []interface{}) {
 	ws.mutex.Lock()
 	defer ws.mutex.Unlock()
 
 	if ws.numWorkers < ws.maxWorkers {
-		go ws.runWorker()
-		ws.numWorkers++
 		ws.wg.Add(1)
+		go ws.runWorker()
 	}
 
-	ws.items = append(ws.items, item)
+	ws.items = append(ws.items, items...)
 	ws.cond.Signal()
 }
 
-func (ws *WorkStack) Next() (string, int) {
+func (ws *CubaStack) Next() (interface{}, bool) {
 	ws.mutex.Lock()
 	defer ws.mutex.Unlock()
 
@@ -68,40 +64,29 @@ func (ws *WorkStack) Next() (string, int) {
 		ws.cond.Wait()
 	}
 
-	if len(ws.items) == 0 && ws.closed {
-		return "", WS_CLOSED
+	if ws.closed && len(ws.items) == 0 {
+		return nil, false
 	}
 
 	item := ws.items[len(ws.items)-1]
 	ws.items = ws.items[:len(ws.items)-1]
 
-	if len(ws.items) > 0 {
-		return item, WS_BUSY
-	} else {
-		return item, WS_IDLE
-	}
+
+	return item, ws.closed
 }
 
-func (ws *WorkStack) runWorker() {
+func (ws *CubaStack) runWorker() {
+	atomic.AddInt32(&ws.numWorkers, 1)
 	for {
-		item, state := ws.Next()
-		if state == WS_CLOSED {
+		item, ok := ws.Next()
+		if !ok {
 			break
 		}
 
 		newItems := ws.workerFunc(item)
-		for _, newItem := range newItems {
-			ws.Push(newItem)
-		}
-
-		if state == WS_IDLE {
-			break
-		}
+		ws.Push(newItems)
 	}
-
-	ws.mutex.Lock()
-	ws.numWorkers--
-	ws.mutex.Unlock()
+	atomic.AddInt32(&ws.numWorkers, -1)
 
 	ws.wg.Done()
 }
