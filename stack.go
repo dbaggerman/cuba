@@ -1,10 +1,8 @@
-package main
+package cuba
 
 import (
-	"fmt"
 	"sync"
-	"path"
-	"time"
+	"runtime"
 )
 
 const (
@@ -20,8 +18,19 @@ type WorkStack struct {
 	numWorkers int
 	maxWorkers int
 	closed bool
-	workerFunc func(*WorkStack)
+	workerFunc func(string) []string
 	wg *sync.WaitGroup
+}
+
+func NewStack(worker func(string) []string) *WorkStack {
+	m := &sync.Mutex{}
+	return &WorkStack{
+		mutex: m,
+		cond: sync.NewCond(m),
+		workerFunc: worker,
+		maxWorkers: runtime.NumCPU(),
+		wg: &sync.WaitGroup{},
+	}
 }
 
 func (ws *WorkStack) Close() {
@@ -32,12 +41,17 @@ func (ws *WorkStack) Close() {
 	ws.cond.Broadcast()
 }
 
+func (ws *WorkStack) Run() {
+	ws.Close()
+	ws.wg.Wait()
+}
+
 func (ws *WorkStack) Push(item string) {
 	ws.mutex.Lock()
 	defer ws.mutex.Unlock()
 
 	if ws.numWorkers < ws.maxWorkers {
-		go ws.workerFunc(ws)
+		go ws.runWorker()
 		ws.numWorkers++
 		ws.wg.Add(1)
 	}
@@ -68,49 +82,26 @@ func (ws *WorkStack) Next() (string, int) {
 	}
 }
 
-func worker(ws *WorkStack) {
-	fmt.Println("starting worker")
+func (ws *WorkStack) runWorker() {
 	for {
 		item, state := ws.Next()
 		if state == WS_CLOSED {
 			break
 		}
 
-		fmt.Println(item)
-		if len(item) < 20 {
-			ws.Push(path.Join(item, "L"))
-			ws.Push(path.Join(item, "R"))
+		newItems := ws.workerFunc(item)
+		for _, newItem := range newItems {
+			ws.Push(newItem)
 		}
 
 		if state == WS_IDLE {
 			break
 		}
 	}
-	fmt.Println("ending worker")
 
 	ws.mutex.Lock()
 	ws.numWorkers--
 	ws.mutex.Unlock()
 
 	ws.wg.Done()
-}
-
-func main() {
-	m := &sync.Mutex{}
-	ws := &WorkStack{
-		mutex: m,
-		cond: sync.NewCond(m),
-		workerFunc: worker,
-		maxWorkers: 10,
-		wg: &sync.WaitGroup{},
-	}
-
-	ws.Push("foo")
-	time.Sleep(time.Second)
-	ws.Push("bar")
-	time.Sleep(time.Second)
-	ws.Push("baz")
-
-	ws.Close()
-	ws.wg.Wait()
 }
