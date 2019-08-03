@@ -4,10 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	// "strings"
 
 	"github.com/dbaggerman/cuba"
-	// "github.com/pkg/profile"
 )
 
 type DirectoryJob struct {
@@ -17,8 +15,6 @@ type DirectoryJob struct {
 
 func worker(item interface{}) []interface{} {
 	job := item.(*DirectoryJob)
-	// log.Printf("[JOB] %s", job.path)
-
 
 	file, err := os.Open(job.path)
 	if err != nil {
@@ -26,19 +22,6 @@ func worker(item interface{}) []interface{} {
 		return nil
 	}
 	defer file.Close()
-
-	// fileInfo, err := file.Stat()
-	// if err != nil {
-	// 	log.Printf("[ERR] Failed to stat %s: %v", job.path, err)
-	// 	return nil
-	// }
-
-	// if !fileInfo.IsDir() {
-	// 	log.Printf("[FILE] %s", job.path)
-	// 	return nil
-	// }
-
-	// log.Printf("[DIR] %s", job.path)
 
 	var newJobs []interface{}
 
@@ -48,13 +31,7 @@ func worker(item interface{}) []interface{} {
 		return nil
 	}
 
-	// haveIgnore := false
-
 	for _, dirent := range dirents {
-		// if name == ".ignore" {
-		// 	haveIgnore = true
-		// }
-
 		direntPath := filepath.Join(job.path, dirent.Name())
 
 		if !dirent.IsDir() {
@@ -70,16 +47,10 @@ func worker(item interface{}) []interface{} {
 		}
 	}
 
-	// if haveIgnore {
-	// 	log.Printf("Found ignore file: %s", filepath.Join(path, ".ignore"))
-	// }
-
 	return newJobs
 }
 
 func main() {
-	// defer profile.Start().Stop()
-
 	ws := cuba.NewStack(worker)
 
 	info, err := os.Stat(".")

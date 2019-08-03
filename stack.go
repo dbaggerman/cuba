@@ -71,7 +71,6 @@ func (ws *CubaStack) Next() (interface{}, bool) {
 	item := ws.items[len(ws.items)-1]
 	ws.items = ws.items[:len(ws.items)-1]
 
-
 	return item, ws.closed
 }
 
