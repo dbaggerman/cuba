@@ -68,7 +68,7 @@ func (cuba *Cuba) Push(item interface{}) {
 }
 
 // Push multiple items into the worker pool.
-// 
+//
 // Compared to Push() this only aquires the lock once, so may reduce lock
 // contention.
 func (cuba *Cuba) PushAll(items []interface{}) {
