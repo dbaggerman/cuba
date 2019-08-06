@@ -27,9 +27,11 @@ func main() {
 
 	ws.Push("foo")
 	time.Sleep(time.Second)
+
 	ws.Push("bar")
 	time.Sleep(time.Second)
+
 	ws.Push("baz")
 
-	ws.Run()
+	ws.Finish()
 }

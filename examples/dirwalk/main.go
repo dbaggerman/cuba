@@ -69,5 +69,5 @@ func main() {
 
 	ws.Push(root)
 
-	ws.Run()
+	ws.Finish()
 }
