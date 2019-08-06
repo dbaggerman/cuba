@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"path"
 	"time"
@@ -8,11 +9,12 @@ import (
 	"github.com/dbaggerman/cuba"
 )
 
-func worker(item string) []string {
-	fmt.Println(item)
-	subs := []string{}
+func worker(itemIf interface{}) []interface{} {
+	item := itemIf.(string)
+	fmt.Fprintf(os.Stderr, "Item: %s\n", item)
+	subs := []interface{}{}
 	if len(item) < 20 {
-		subs = []string{
+		subs = []interface{}{
 			path.Join(item, "L"),
 			path.Join(item, "R"),
 		}
@@ -21,7 +23,7 @@ func worker(item string) []string {
 }
 
 func main() {
-	ws := cuba.NewStack(worker)
+	ws := cuba.New(worker, cuba.NewQueue())
 
 	ws.Push("foo")
 	time.Sleep(time.Second)

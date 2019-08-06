@@ -34,6 +34,10 @@ func worker(item interface{}) []interface{} {
 	for _, dirent := range dirents {
 		direntPath := filepath.Join(job.path, dirent.Name())
 
+		if dirent.Name() == ".git" {
+			continue
+		}
+
 		if !dirent.IsDir() {
 			log.Printf("[FILE] %s", direntPath)
 			continue
@@ -51,7 +55,7 @@ func worker(item interface{}) []interface{} {
 }
 
 func main() {
-	ws := cuba.NewStack(worker)
+	ws := cuba.New(worker, cuba.NewStack())
 
 	info, err := os.Stat(".")
 	if err != nil {
@@ -63,7 +67,7 @@ func main() {
 		info: info,
 	}
 
-	ws.Push([]interface{}{root})
+	ws.Push(root)
 
 	ws.Run()
 }
