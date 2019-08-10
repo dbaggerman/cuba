@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 )
 
-type CubaFunc func(interface{}) []interface{}
+type CubaFunc func(*Handle)
 
-type Cuba struct {
+type Pool struct {
 	mutex      *sync.Mutex
 	bucket     Bucket
 	cond       *sync.Cond
@@ -26,9 +26,9 @@ type Cuba struct {
 //
 // Bucket affects the order that items will be processed in. cuba.NewQueue()
 // provides FIFO ordering, while cuba.NewStack() provides LIFO ordered work.
-func New(worker CubaFunc, bucket Bucket) *Cuba {
+func New(worker CubaFunc, bucket Bucket) *Pool {
 	m := &sync.Mutex{}
-	return &Cuba{
+	return &Pool{
 		mutex:      m,
 		bucket:     bucket,
 		cond:       sync.NewCond(m),
@@ -41,15 +41,15 @@ func New(worker CubaFunc, bucket Bucket) *Cuba {
 // Sets the maximum number of worker goroutines.
 //
 // Default: runtime.NumCPU() (i.e. the number of CPU cores available)
-func (cuba *Cuba) SetMaxWorkers(n int32) {
-	cuba.maxWorkers = n
+func (pool *Pool) SetMaxWorkers(n int32) {
+	pool.maxWorkers = n
 }
 
 // Push an item into the worker pool. This will be scheduled to run on a worker
 // immediately.
-func (cuba *Cuba) Push(item interface{}) {
-	cuba.mutex.Lock()
-	defer cuba.mutex.Unlock()
+func (pool *Pool) Push(item interface{}) {
+	pool.mutex.Lock()
+	defer pool.mutex.Unlock()
 
 	// The ideal might be to have a fixed pool of worker goroutines which all
 	// close down when the work is done.
@@ -58,75 +58,79 @@ func (cuba *Cuba) Push(item interface{}) {
 	// Having a floating pool means we can restart workers as we discover more
 	// work to be done, which solves this problem at the cost of a little
 	// inefficiency.
-	if cuba.numWorkers < cuba.maxWorkers {
-		cuba.wg.Add(1)
-		go cuba.runWorker()
+	if pool.numWorkers < pool.maxWorkers {
+		pool.wg.Add(1)
+		go pool.runWorker()
 	}
 
-	cuba.bucket.Push(item)
-	cuba.cond.Signal()
+	pool.bucket.Push(item)
+	pool.cond.Signal()
 }
 
 // Push multiple items into the worker pool.
 //
 // Compared to Push() this only aquires the lock once, so may reduce lock
 // contention.
-func (cuba *Cuba) PushAll(items []interface{}) {
-	cuba.mutex.Lock()
-	defer cuba.mutex.Unlock()
+func (pool *Pool) PushAll(items []interface{}) {
+	pool.mutex.Lock()
+	defer pool.mutex.Unlock()
 
 	for i := 0; i < len(items); i++ {
-		if cuba.numWorkers >= cuba.maxWorkers {
+		if pool.numWorkers >= pool.maxWorkers {
 			break
 		}
-		cuba.wg.Add(1)
-		go cuba.runWorker()
+		pool.wg.Add(1)
+		go pool.runWorker()
 	}
 
-	cuba.bucket.PushAll(items)
-	cuba.cond.Broadcast()
+	pool.bucket.PushAll(items)
+	pool.cond.Broadcast()
 }
 
 // Calling Finish() waits for all work to complete, and allows goroutines to shut
 // down.
-func (cuba *Cuba) Finish() {
-	cuba.mutex.Lock()
+func (pool *Pool) Finish() {
+	pool.mutex.Lock()
 
-	cuba.closed = true
-	cuba.cond.Broadcast()
+	pool.closed = true
+	pool.cond.Broadcast()
 
-	cuba.mutex.Unlock()
-	cuba.wg.Wait()
+	pool.mutex.Unlock()
+	pool.wg.Wait()
 }
 
-func (cuba *Cuba) next() (interface{}, bool) {
-	cuba.mutex.Lock()
-	defer cuba.mutex.Unlock()
+func (pool *Pool) next() (interface{}, bool) {
+	pool.mutex.Lock()
+	defer pool.mutex.Unlock()
 
-	for cuba.bucket.Empty() {
-		if cuba.closed {
+	for pool.bucket.Empty() {
+		if pool.closed {
 			return nil, false
 		}
-		cuba.cond.Wait()
+		pool.cond.Wait()
 	}
 
-	item := cuba.bucket.Pop()
+	item := pool.bucket.Pop()
 
 	return item, true
 }
 
-func (cuba *Cuba) runWorker() {
-	atomic.AddInt32(&cuba.numWorkers, 1)
+func (pool *Pool) runWorker() {
+	atomic.AddInt32(&pool.numWorkers, 1)
+	handle := Handle{
+		pool: pool,
+	}
 	for {
-		item, ok := cuba.next()
+		item, ok := pool.next()
 		if !ok {
 			break
 		}
+		handle.item = item
 
-		newItems := cuba.workerFunc(item)
-		cuba.PushAll(newItems)
+		pool.workerFunc(&handle)
+		handle.Sync()
 	}
-	atomic.AddInt32(&cuba.numWorkers, -1)
+	atomic.AddInt32(&pool.numWorkers, -1)
 
-	cuba.wg.Done()
+	pool.wg.Done()
 }

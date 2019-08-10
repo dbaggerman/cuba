@@ -8,27 +8,25 @@ import (
 	"github.com/dbaggerman/cuba"
 )
 
-type DirectoryJob struct {
+type Directory struct {
 	path string
 	info os.FileInfo
 }
 
-func worker(item interface{}) []interface{} {
-	job := item.(*DirectoryJob)
+func worker(handle *cuba.Handle) {
+	job := handle.Item().(*Directory)
 
 	file, err := os.Open(job.path)
 	if err != nil {
 		log.Printf("[ERR] Failed to open %s: %v", job.path, err)
-		return nil
+		return
 	}
 	defer file.Close()
-
-	var newJobs []interface{}
 
 	dirents, err := file.Readdir(-1)
 	if err != nil {
 		log.Printf("[ERR] Failed to read %s dirnames: %v", job.path, err)
-		return nil
+		return
 	}
 
 	for _, dirent := range dirents {
@@ -43,15 +41,14 @@ func worker(item interface{}) []interface{} {
 			continue
 		} else {
 			log.Printf("[DIR] %s", direntPath)
-			direntJob := &DirectoryJob{
-				path: direntPath,
-				info: dirent,
-			}
-			newJobs = append(newJobs, direntJob)
+			handle.Push(
+				&Directory{
+					path: direntPath,
+					info: dirent,
+				},
+			)
 		}
 	}
-
-	return newJobs
 }
 
 func main() {
@@ -62,7 +59,7 @@ func main() {
 		panic(err)
 	}
 
-	root := &DirectoryJob{
+	root := &Directory{
 		path: ".",
 		info: info,
 	}
