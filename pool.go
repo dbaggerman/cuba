@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-type CubaFunc func(*Handle)
+type Task func(*Handle)
 
 type Pool struct {
 	mutex      *sync.Mutex
@@ -15,7 +15,7 @@ type Pool struct {
 	numWorkers int32
 	maxWorkers int32
 	closed     bool
-	workerFunc CubaFunc
+	task       Task
 	wg         *sync.WaitGroup
 }
 
@@ -26,13 +26,13 @@ type Pool struct {
 //
 // Bucket affects the order that items will be processed in. cuba.NewQueue()
 // provides FIFO ordering, while cuba.NewStack() provides LIFO ordered work.
-func New(worker CubaFunc, bucket Bucket) *Pool {
+func New(task Task, bucket Bucket) *Pool {
 	m := &sync.Mutex{}
 	return &Pool{
 		mutex:      m,
 		bucket:     bucket,
 		cond:       sync.NewCond(m),
-		workerFunc: worker,
+		task:       task,
 		maxWorkers: int32(runtime.NumCPU()),
 		wg:         &sync.WaitGroup{},
 	}
@@ -127,7 +127,7 @@ func (pool *Pool) runWorker() {
 		}
 		handle.item = item
 
-		pool.workerFunc(&handle)
+		pool.task(&handle)
 		handle.Sync()
 	}
 	atomic.AddInt32(&pool.numWorkers, -1)
