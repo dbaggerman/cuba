@@ -10,4 +10,5 @@ test-unit:
 test-integration:
 	go run ./examples/simple 2>/dev/null
 	go run ./examples/dirwalk 2>/dev/null
+	go run ./examples/abort 2>/dev/null
 
