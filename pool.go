@@ -135,7 +135,7 @@ func (pool *Pool) next() (interface{}, bool) {
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 
-	for pool.bucket.Empty() {
+	for pool.bucket.IsEmpty() {
 		if pool.state == POOL_FINISH || pool.state == POOL_ABORT {
 			return nil, false
 		}
